@@ -1,0 +1,82 @@
+version: "3.9"
+services:
+  db:
+    image: postgres
+    volumes:
+      - ./data/db:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_DB=postgres
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    logging:
+      driver: gelf
+      options:
+        gelf-address: "udp://localhost:12201"
+        tag: "log_postgres"
+  web1:
+    image: rohitkatlaa/dataline_pipeline_creation:latest
+    command: ./docker-entrypoint.sh
+    ports:
+      - "8001:8001"
+    environment:
+      - POSTGRES_NAME=postgres
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_HOST=db
+      - DATALINE_URL1=http://0.0.0.0:8001
+      - DATALINE_URL2=http://0.0.0.0:8002
+    depends_on:
+      - db
+    logging:
+      driver: gelf
+      options:
+        gelf-address: "udp://localhost:12201"
+        tag: "log_pipeline_creation"
+  web2:
+    image: rohitkatlaa/dataline_pipeline_execution:latest
+    command: ./docker-entrypoint.sh
+    ports:
+      - "8002:8002"
+    environment:
+      - POSTGRES_NAME=postgres
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_HOST=db
+      - DATALINE_URL1=http://0.0.0.0:8001
+      - DATALINE_URL2=http://0.0.0.0:8002
+    depends_on:
+      - db
+    logging:
+      driver: gelf
+      options:
+        gelf-address: "udp://localhost:12201"
+        tag: "log_pipeline_execution"
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.7.0
+    environment:
+      - discovery.type=single-node
+    ports:
+      - 9200:9200
+  kibana:
+    image: docker.elastic.co/kibana/kibana:7.7.0
+    ports:
+      - 5601:5601
+    depends_on:
+      - elasticsearch
+      - logstash
+    logging:
+      driver: gelf
+      options:
+        gelf-address: "udp://localhost:12201"
+        tag: "log_kibana"
+  logstash:
+    image: docker.elastic.co/logstash/logstash:7.7.0
+    links:
+      - elasticsearch
+    volumes:
+      - .:/etc/logstash
+    command: logstash -f /etc/logstash/logstash.conf
+    ports:
+      - 12201:12201/udp
+    depends_on:
+      - elasticsearch
